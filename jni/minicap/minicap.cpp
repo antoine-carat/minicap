@@ -488,7 +488,7 @@ main(int argc, char* argv[]) {
 
       haveFrame = true;
 
-      if (pumps(fd, frame->data, frame->size) < 0) {
+      if (pumps(fd, (unsigned char*)frame.data, frame.size) < 0) {
         break;
       }
 
