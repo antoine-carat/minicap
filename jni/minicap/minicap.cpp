@@ -488,20 +488,7 @@ main(int argc, char* argv[]) {
 
       haveFrame = true;
 
-      // Encode the frame.
-      if (!encoder.encode(&frame, quality)) {
-        MCERROR("Unable to encode frame");
-        goto disaster;
-      }
-
-      // Push it out synchronously because it's fast and we don't care
-      // about other clients.
-      unsigned char* data = encoder.getEncodedData() - 4;
-      size_t size = encoder.getEncodedSize();
-
-      putUInt32LE(data, size);
-
-      if (pumps(fd, data, size + 4) < 0) {
+      if (pumps(fd, frame->data, frame->size) < 0) {
         break;
       }
 
