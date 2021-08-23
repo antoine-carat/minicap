@@ -440,16 +440,18 @@ main(int argc, char* argv[]) {
   }
 
   if (!server.start(sockport)) {
-    MCERROR("Unable to start server on namespace '%i'", sockport);
+    MCERROR("Unable to start server on port '%i'", sockport);
     goto disaster;
   }
 
   int fd;
+  char buffer[1];
   while (!gWaiter.isStopped() && (fd = server.accept()) > 0) {
     MCINFO("New client connection");
 
     int pending, err;
-    while (!gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
+    int byte_read = recv(fd, buffer, 1, 0);
+    while (byte_read != 0 && !gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
       auto frameAvailableAt = std::chrono::steady_clock::now();
       if (skipFrames && pending > 1) {
         // Skip frames if we have too many. Not particularly thread safe,
@@ -510,6 +512,7 @@ main(int argc, char* argv[]) {
       if(framePeriodMs > 0) {
         std::this_thread::sleep_until(frameAvailableAt + std::chrono::milliseconds(framePeriodMs));
       }
+      byte_read = recv(fd, buffer, 1, 0);
     }
 
 close:
