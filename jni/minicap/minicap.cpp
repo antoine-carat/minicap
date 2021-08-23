@@ -22,9 +22,6 @@
 #include "SimpleServer.hpp"
 #include "Projection.hpp"
 
-#define BANNER_VERSION 1
-#define BANNER_SIZE 24
-
 #define DEFAULT_SOCKET_PORT 2020
 #define DEFAULT_DISPLAY_ID 0
 #define DEFAULT_JPG_QUALITY 80
@@ -447,26 +444,9 @@ main(int argc, char* argv[]) {
     goto disaster;
   }
 
-  // Prepare banner for clients.
-  unsigned char banner[BANNER_SIZE];
-  banner[0] = (unsigned char) BANNER_VERSION;
-  banner[1] = (unsigned char) BANNER_SIZE;
-  putUInt32LE(banner + 2, getpid());
-  putUInt32LE(banner + 6,  realInfo.width);
-  putUInt32LE(banner + 10,  realInfo.height);
-  putUInt32LE(banner + 14, desiredInfo.width);
-  putUInt32LE(banner + 18, desiredInfo.height);
-  banner[22] = (unsigned char) desiredInfo.orientation;
-  banner[23] = quirks;
-
   int fd;
   while (!gWaiter.isStopped() && (fd = server.accept()) > 0) {
     MCINFO("New client connection");
-
-    if (pumps(fd, banner, BANNER_SIZE) < 0) {
-      close(fd);
-      continue;
-    }
 
     int pending, err;
     while (!gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
