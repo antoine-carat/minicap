@@ -22,10 +22,7 @@
 #include "SimpleServer.hpp"
 #include "Projection.hpp"
 
-#define BANNER_VERSION 1
-#define BANNER_SIZE 24
-
-#define DEFAULT_SOCKET_NAME "minicap"
+#define DEFAULT_SOCKET_PORT 2020
 #define DEFAULT_DISPLAY_ID 0
 #define DEFAULT_JPG_QUALITY 80
 
@@ -40,7 +37,7 @@ usage(const char* pname) {
   fprintf(stderr,
     "Usage: %s [-h] [-n <name>]\n"
     "  -d <id>:       Display ID. (%d)\n"
-    "  -n <name>:     Change the name of the abtract unix domain socket. (%s)\n"
+    "  -n <name>:     Change the port number of the socket. (%i)\n"
     "  -P <value>:    Display projection (<w>x<h>@<w>x<h>/{0|90|180|270}).\n"
     "  -Q <value>:    JPEG quality (0-100).\n"
     "  -s:            Take a screenshot and output it to stdout. Needs -P.\n"
@@ -49,7 +46,7 @@ usage(const char* pname) {
     "  -t:            Attempt to get the capture method running, then exit.\n"
     "  -i:            Get display information in JSON format. May segfault.\n"
     "  -h:            Show help.\n",
-    pname, DEFAULT_DISPLAY_ID, DEFAULT_SOCKET_NAME
+    pname, DEFAULT_DISPLAY_ID, DEFAULT_SOCKET_PORT
   );
 }
 
@@ -209,7 +206,7 @@ signal_handler(int signum) {
 int
 main(int argc, char* argv[]) {
   const char* pname = argv[0];
-  const char* sockname = DEFAULT_SOCKET_NAME;
+  int sockport = DEFAULT_SOCKET_PORT;
   uint32_t displayId = DEFAULT_DISPLAY_ID;
   unsigned int quality = DEFAULT_JPG_QUALITY;
   int framePeriodMs = 0;
@@ -227,7 +224,7 @@ main(int argc, char* argv[]) {
       displayId = atoi(optarg);
       break;
     case 'n':
-      sockname = optarg;
+      sockport = atoi(optarg);
       break;
     case 'P': {
       Projection::Parser parser;
@@ -442,34 +439,19 @@ main(int argc, char* argv[]) {
     return EXIT_SUCCESS;
   }
 
-  if (!server.start(sockname)) {
-    MCERROR("Unable to start server on namespace '%s'", sockname);
+  if (!server.start(sockport)) {
+    MCERROR("Unable to start server on port '%i'", sockport);
     goto disaster;
   }
 
-  // Prepare banner for clients.
-  unsigned char banner[BANNER_SIZE];
-  banner[0] = (unsigned char) BANNER_VERSION;
-  banner[1] = (unsigned char) BANNER_SIZE;
-  putUInt32LE(banner + 2, getpid());
-  putUInt32LE(banner + 6,  realInfo.width);
-  putUInt32LE(banner + 10,  realInfo.height);
-  putUInt32LE(banner + 14, desiredInfo.width);
-  putUInt32LE(banner + 18, desiredInfo.height);
-  banner[22] = (unsigned char) desiredInfo.orientation;
-  banner[23] = quirks;
-
   int fd;
+  char buffer[1];
   while (!gWaiter.isStopped() && (fd = server.accept()) > 0) {
     MCINFO("New client connection");
 
-    if (pumps(fd, banner, BANNER_SIZE) < 0) {
-      close(fd);
-      continue;
-    }
-
     int pending, err;
-    while (!gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
+    int byte_read = recv(fd, buffer, 1, 0);
+    while (byte_read != 0 && !gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
       auto frameAvailableAt = std::chrono::steady_clock::now();
       if (skipFrames && pending > 1) {
         // Skip frames if we have too many. Not particularly thread safe,
@@ -506,20 +488,7 @@ main(int argc, char* argv[]) {
 
       haveFrame = true;
 
-      // Encode the frame.
-      if (!encoder.encode(&frame, quality)) {
-        MCERROR("Unable to encode frame");
-        goto disaster;
-      }
-
-      // Push it out synchronously because it's fast and we don't care
-      // about other clients.
-      unsigned char* data = encoder.getEncodedData() - 4;
-      size_t size = encoder.getEncodedSize();
-
-      putUInt32LE(data, size);
-
-      if (pumps(fd, data, size + 4) < 0) {
+      if (pumps(fd, (unsigned char*)frame.data, frame.size) < 0) {
         break;
       }
 
@@ -530,6 +499,7 @@ main(int argc, char* argv[]) {
       if(framePeriodMs > 0) {
         std::this_thread::sleep_until(frameAvailableAt + std::chrono::milliseconds(framePeriodMs));
       }
+      byte_read = recv(fd, buffer, 1, 0);
     }
 
 close:
