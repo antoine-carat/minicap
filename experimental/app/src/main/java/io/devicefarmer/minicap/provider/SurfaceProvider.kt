@@ -27,6 +27,7 @@ import io.devicefarmer.minicap.utils.DisplayInfo
 import io.devicefarmer.minicap.utils.DisplayManagerGlobal
 import io.devicefarmer.minicap.utils.SurfaceControl
 import java.io.PrintStream
+import java.net.Socket
 import kotlin.system.exitProcess
 
 /**
@@ -69,7 +70,7 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
     /**
      *
      */
-    override fun onConnection(socket: LocalSocket) {
+    override fun onConnection(socket: Socket) {
         super.onConnection(socket)
         initSurface()
     }

@@ -27,6 +27,7 @@ import io.devicefarmer.minicap.SimpleServer
 import org.slf4j.LoggerFactory
 import java.io.OutputStream
 import java.io.PrintStream
+import java.net.Socket
 import java.nio.ByteBuffer
 
 /**
@@ -73,7 +74,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         clientOutput = out
     }
 
-    override fun onConnection(socket: LocalSocket) {
+    override fun onConnection(socket: Socket) {
         clientOutput = MinicapClientOutput(socket).apply {
             sendBanner(getScreenSize(),getTargetSize(),rotation)
         }
@@ -81,6 +82,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     }
 
     override fun onImageAvailable(reader: ImageReader) {
+        log.info("image available")
         val image = reader.acquireLatestImage()
         val currentTime = System.currentTimeMillis()
         if (image != null) {
