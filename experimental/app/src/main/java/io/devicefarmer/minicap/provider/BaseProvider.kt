@@ -19,7 +19,6 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.media.Image
 import android.media.ImageReader
-import android.net.LocalSocket
 import android.util.Size
 import io.devicefarmer.minicap.output.DisplayOutput
 import io.devicefarmer.minicap.output.MinicapClientOutput
@@ -27,6 +26,7 @@ import io.devicefarmer.minicap.SimpleServer
 import org.slf4j.LoggerFactory
 import java.io.OutputStream
 import java.io.PrintStream
+import java.net.Socket
 import java.nio.ByteBuffer
 
 /**
@@ -73,10 +73,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         clientOutput = out
     }
 
-    override fun onConnection(socket: LocalSocket) {
-        clientOutput = MinicapClientOutput(socket).apply {
-            sendBanner(getScreenSize(),getTargetSize(),rotation)
-        }
+    override fun onConnection(socket: Socket) {
         init(clientOutput)
     }
 

@@ -15,8 +15,8 @@
 
 package io.devicefarmer.minicap
 
-import android.net.LocalServerSocket
-import android.net.LocalSocket
+import java.net.ServerSocket
+import java.net.Socket
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.IOException
@@ -24,20 +24,20 @@ import java.io.IOException
 /**
  * Minimalist "server" to bootstrap development
  */
-class SimpleServer(private val socket: String, private val listener: Listener) {
+class SimpleServer(private val portno: Int, private val listener: Listener) {
     companion object {
         val log: Logger = LoggerFactory.getLogger(Main::class.java.simpleName)
     }
 
     interface Listener {
-        fun onConnection(socket: LocalSocket)
+        fun onConnection(socket: Socket)
     }
 
     fun start() {
         try {
-            val serverSocket = LocalServerSocket(socket)
-            log.info("Listening on socket : ${socket}")
-            val clientSocket: LocalSocket = serverSocket.accept()
+            val serverSocket = ServerSocket(portno)
+            log.info("Socket listening on port: ${portno}")
+            val clientSocket: Socket = serverSocket.accept()
             listener.onConnection(clientSocket)
         } catch (e: IOException) {
             log.error("error waiting connection", e)
