@@ -60,7 +60,7 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
 
 
     override fun screenshot(printer: PrintStream) {
-        init(ScreenshotOutput(printer))
+        init()
         initSurface {
             super.onImageAvailable(it)
             exitProcess(0)

@@ -16,6 +16,7 @@
 package io.devicefarmer.minicap.provider
 
 import android.graphics.Bitmap
+import android.graphics.ImageFormat
 import android.graphics.PixelFormat
 import android.media.Image
 import android.media.ImageReader
@@ -25,10 +26,14 @@ import io.devicefarmer.minicap.output.DisplayOutput
 import io.devicefarmer.minicap.output.MinicapClientOutput
 import io.devicefarmer.minicap.SimpleServer
 import org.slf4j.LoggerFactory
-import java.io.OutputStream
-import java.io.PrintStream
+import java.io.*
 import java.net.Socket
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicReferenceArray
+import java.util.concurrent.locks.ReadWriteLock
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.thread
 
 /**
  * Base class to provide images of the screen. Those captures can be setup from SurfaceControl - as
@@ -44,11 +49,14 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         val log = LoggerFactory.getLogger(BaseProvider::class.java.simpleName)
     }
 
-    private lateinit var clientOutput: DisplayOutput
+    private lateinit var clientSocket: Socket
     private lateinit var imageReader: ImageReader
     private var previousTimeStamp: Long = 0L
     private var framePeriodMs: Long = 0
-    private var bitmap: Bitmap? = null //is used to compress the images
+    private lateinit var lastImage: ByteArray
+    private var senderStarted = false
+
+    private val lock = ReentrantLock()
 
     var quality: Int = 100
     var frameRate: Float = Float.MAX_VALUE
@@ -64,61 +72,76 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     fun getTargetSize(): Size = if(rotation%2 != 0) Size(targetSize.height, targetSize.width) else targetSize
     fun getImageReader(): ImageReader = imageReader
 
-    fun init(out: DisplayOutput) {
+    fun init() {
         imageReader = ImageReader.newInstance(
             getTargetSize().width,
             getTargetSize().height,
             PixelFormat.RGBA_8888,
-            2
+            1
         )
-        clientOutput = out
     }
 
     override fun onConnection(socket: Socket) {
-        clientOutput = MinicapClientOutput(socket).apply {
-            sendBanner(getScreenSize(),getTargetSize(),rotation)
-        }
-        init(clientOutput)
+        init()
+        clientSocket = socket
     }
 
     override fun onImageAvailable(reader: ImageReader) {
-        log.info("image available")
+        log.info("img: ${System.currentTimeMillis()}")
         val image = reader.acquireLatestImage()
-        val currentTime = System.currentTimeMillis()
         if (image != null) {
-            if (currentTime - previousTimeStamp > framePeriodMs) {
-                previousTimeStamp = currentTime
-                encode(image, quality, clientOutput.imageBuffer)
-                clientOutput.send()
-            } else {
-                log.warn("skipping frame ($currentTime/$previousTimeStamp)")
+            val encodedImage = encode(image, quality)
+            log.info("imgEncode: ${System.currentTimeMillis()}")
+            synchronized(this) {
+                lastImage = encodedImage
+            }
+            if (!senderStarted) {
+                startSender()
+                senderStarted = true
             }
             image.close()
         } else {
-            log.warn("no image available")
+            log.info("no image available")
         }
     }
 
-    private fun encode(image: Image, q: Int, out: OutputStream) {
-        with(image) {
-            val planes: Array<Image.Plane> = planes
-            val buffer: ByteBuffer = planes[0].buffer
-            val pixelStride: Int = planes[0].pixelStride
-            val rowStride: Int = planes[0].rowStride
-            val rowPadding: Int = rowStride - pixelStride * width
-            // createBitmap can be resources consuming
-            bitmap ?: Bitmap.createBitmap(
-                width + rowPadding / pixelStride,
-                height,
-                Bitmap.Config.ARGB_8888
-            ).apply {
-                copyPixelsFromBuffer(buffer)
-            }.run {
-                //the image need to be cropped
-                Bitmap.createBitmap(this, 0, 0, getTargetSize().width, getTargetSize().height)
-            }.apply {
-                compress(Bitmap.CompressFormat.JPEG, q, out)
+    private fun startSender() {
+        thread {
+            val input = DataInputStream(clientSocket.inputStream)
+            while(true) {
+                //log.info("waiting for client to send 1 byte")
+                // Wait for client to send 1 byte char
+                val askImage = input.readByte()
+                //log.info("after reading 1 byte")
+                var currentImage: ByteArray
+                synchronized(this) {
+                    currentImage = lastImage.copyOf()
+                }
+                //log.info("currentImage size is ${currentImage.size}")
+                with(clientSocket.outputStream) {
+                    write(currentImage)
+                    flush()
+                }
+                //log.info("done")
             }
         }
+    }
+
+    private fun encode(image: Image, q:Int): ByteArray {
+        val planes: Array<Image.Plane> = image.planes
+        val buffer: ByteBuffer = planes[0].buffer
+        val pixelStride: Int = planes[0].pixelStride
+        val rowStride: Int = planes[0].rowStride
+        val rowPadding: Int = rowStride - pixelStride * image.width
+        // createBitmap can be resources consuming
+        var bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride,
+            image.height,
+            Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(buffer)
+        bitmap = Bitmap.createBitmap(bitmap, 0, 0, getTargetSize().width, getTargetSize().height)
+        val finalSize = bitmap.rowBytes * bitmap.height
+        val byteBuffer = ByteBuffer.allocate(finalSize)
+        bitmap.copyPixelsToBuffer(byteBuffer)
+        return byteBuffer.array()
     }
 }
