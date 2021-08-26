@@ -15,8 +15,8 @@
 
 package io.devicefarmer.minicap.output
 
-import android.net.LocalSocket
 import android.util.Size
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -27,7 +27,7 @@ import java.nio.ByteOrder
  */
 @ExperimentalUnsignedTypes
 class MinicapClientOutput(
-    private val socket: LocalSocket
+    private val socket: Socket
 ) :
     DisplayOutput() {
     companion object {

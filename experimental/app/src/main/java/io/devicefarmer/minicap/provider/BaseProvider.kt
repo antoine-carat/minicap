@@ -19,15 +19,19 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.media.Image
 import android.media.ImageReader
-import android.net.LocalSocket
 import android.util.Size
 import io.devicefarmer.minicap.output.DisplayOutput
 import io.devicefarmer.minicap.output.MinicapClientOutput
 import io.devicefarmer.minicap.SimpleServer
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
 import java.io.OutputStream
 import java.io.PrintStream
+import java.net.Socket
 import java.nio.ByteBuffer
+import java.nio.Buffer
+import java.util.Scanner
 
 /**
  * Base class to provide images of the screen. Those captures can be setup from SurfaceControl - as
@@ -45,6 +49,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
 
     private lateinit var clientOutput: DisplayOutput
     private lateinit var imageReader: ImageReader
+    private lateinit var lastImage: ByteArray
     private var previousTimeStamp: Long = 0L
     private var framePeriodMs: Long = 0
     private var bitmap: Bitmap? = null //is used to compress the images
@@ -73,11 +78,18 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         clientOutput = out
     }
 
-    override fun onConnection(socket: LocalSocket) {
-        clientOutput = MinicapClientOutput(socket).apply {
-            sendBanner(getScreenSize(),getTargetSize(),rotation)
-        }
+    override fun onConnection(socket: Socket) {
+        clientOutput = MinicapClientOutput(socket)
+        log.info("New client connected")
         init(clientOutput)
+        Thread {
+          val input = Scanner(socket.inputStream)
+          while(input.hasNext()) {
+            val read_byte = input.next()
+            log.info("Received ${read_byte}, sending the last image through")
+            clientOutput.send()
+          }
+        }.start()
     }
 
     override fun onImageAvailable(reader: ImageReader) {
@@ -86,8 +98,8 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         if (image != null) {
             if (currentTime - previousTimeStamp > framePeriodMs) {
                 previousTimeStamp = currentTime
+                clientOutput.imageBuffer
                 encode(image, quality, clientOutput.imageBuffer)
-                clientOutput.send()
             } else {
                 log.warn("skipping frame ($currentTime/$previousTimeStamp)")
             }
@@ -115,6 +127,8 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
                 //the image need to be cropped
                 Bitmap.createBitmap(this, 0, 0, getTargetSize().width, getTargetSize().height)
             }.apply {
+                (out as ByteArrayOutputStream).reset()
+                // copyPixelsToBuffer(out as Buffer)
                 compress(Bitmap.CompressFormat.JPEG, q, out)
             }
         }
