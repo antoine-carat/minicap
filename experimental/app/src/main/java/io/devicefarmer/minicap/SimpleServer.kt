@@ -15,8 +15,6 @@
 
 package io.devicefarmer.minicap
 
-import android.net.LocalServerSocket
-import android.net.LocalSocket
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.IOException
@@ -32,17 +30,15 @@ class SimpleServer(private val socket: String, private val listener: Listener) {
     }
 
     interface Listener {
-        fun onConnection(socket: Socket)
+        fun onConnection(socket: Socket, server: ServerSocket)
     }
 
-    fun start() {
-        try {
-            val serverSocket = ServerSocket(2020)
-            log.info("Listening on socket : 2020, ${socket}")
-            val clientSocket: Socket = serverSocket.accept()
-            listener.onConnection(clientSocket)
-        } catch (e: IOException) {
-            log.error("error waiting connection", e)
-        }
+    fun start() = try {
+        val serverSocket = ServerSocket(2020)
+        log.info("Listening on socket : 2020, ${socket}")
+        val clientSocket: Socket = serverSocket.accept()
+        listener.onConnection(clientSocket, serverSocket)
+    } catch (e: IOException) {
+        log.error("error waiting connection", e)
     }
 }

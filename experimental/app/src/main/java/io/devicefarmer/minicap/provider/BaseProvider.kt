@@ -15,12 +15,12 @@
 
 package io.devicefarmer.minicap.provider
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.graphics.PixelFormat
 import android.media.Image
 import android.media.ImageReader
-import android.net.LocalSocket
 import android.util.Size
 import io.devicefarmer.minicap.output.DisplayOutput
 import io.devicefarmer.minicap.output.MinicapClientOutput
@@ -28,6 +28,7 @@ import io.devicefarmer.minicap.SimpleServer
 import org.slf4j.LoggerFactory
 import java.io.*
 import java.net.Socket
+import java.net.ServerSocket
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicReferenceArray
 import java.util.concurrent.locks.ReadWriteLock
@@ -50,6 +51,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     }
 
     private lateinit var clientSocket: Socket
+    private lateinit var serverSocket: ServerSocket
     private lateinit var imageReader: ImageReader
     private var previousTimeStamp: Long = 0L
     private var framePeriodMs: Long = 0
@@ -72,6 +74,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     fun getTargetSize(): Size = if(rotation%2 != 0) Size(targetSize.height, targetSize.width) else targetSize
     fun getImageReader(): ImageReader = imageReader
 
+    @SuppressLint("WrongConstant")
     fun init() {
         imageReader = ImageReader.newInstance(
             getTargetSize().width,
@@ -81,18 +84,19 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         )
     }
 
-    override fun onConnection(socket: Socket) {
+    override fun onConnection(socket: Socket, server: ServerSocket) {
+        log.info("New connection")
         init()
         clientSocket = socket
+        serverSocket = server
     }
 
     override fun onImageAvailable(reader: ImageReader) {
-        log.info("img: ${System.currentTimeMillis()}")
         val image = reader.acquireLatestImage()
         if (image != null) {
             val encodedImage = encode(image, quality)
-            log.info("imgEncode: ${System.currentTimeMillis()}")
             synchronized(this) {
+                log.info("Saving new image")
                 lastImage = encodedImage
             }
             if (!senderStarted) {
@@ -106,25 +110,40 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     }
 
     private fun startSender() {
-        thread {
-            val input = DataInputStream(clientSocket.inputStream)
-            while(true) {
-                //log.info("waiting for client to send 1 byte")
-                // Wait for client to send 1 byte char
+      thread {
+          var input = DataInputStream(clientSocket.inputStream)
+          while(true) {
+              if (clientSocket.isClosed()){ // To restart the sending thread in case of reconnect
+                log.warn("clientSocket got closed, waiting on new connection")
+                clientSocket = serverSocket.accept()
+                input = DataInputStream(clientSocket.inputStream)
+                log.info("Reconnected!")
+              }
+              //log.info("waiting for client to send 1 byte")
+              // Wait for client to send 1 byte char
+              try {
                 val askImage = input.readByte()
-                //log.info("after reading 1 byte")
-                var currentImage: ByteArray
-                synchronized(this) {
-                    currentImage = lastImage.copyOf()
-                }
-                //log.info("currentImage size is ${currentImage.size}")
+              } catch(e: Exception) {
+                clientSocket.close()
+              }
+              //log.info("after reading 1 byte")
+              var currentImage: ByteArray
+              synchronized(this) {
+                  currentImage = lastImage.copyOf()
+              }
+              //log.info("currentImage size is ${currentImage.size}")
+              try {
                 with(clientSocket.outputStream) {
-                    write(currentImage)
-                    flush()
+                  write(currentImage)
+                  flush()
                 }
-                //log.info("done")
-            }
-        }
+              }
+              catch(e: Exception) {
+                clientSocket.close()
+              }
+              //log.info("done")
+          }
+      }
     }
 
     private fun encode(image: Image, q:Int): ByteArray {
