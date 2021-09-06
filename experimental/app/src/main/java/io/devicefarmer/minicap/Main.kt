@@ -40,6 +40,7 @@ class Main {
                     when (elem) {
                         "-s" -> p.screenshot(true)
                         "-i" -> p.displayInfo(true)
+                        "-t" -> p.debugMode(true)
                         "-h" -> showHelp().also { System.exit(0) }
                     }
                     Pair(p, elem)
@@ -82,7 +83,7 @@ class Main {
                     System.err.println("PID: ${android.os.Process.myPid()}")
                     System.err.println("INFO: ${params.projection}")
                     val server = SimpleServer(params.socket, provider)
-                    server.start()
+                    server.start(params.debugMode)
                 }
             }
             Looper.loop()
@@ -138,7 +139,8 @@ class Parameters private constructor(
     val socket: String,
     val quality: Int,
     val displayInfo: Boolean,
-    val frameRate: Float
+    val frameRate: Float,
+    val debugMode: Boolean
 ) {
     data class Builder(
         var projection: Projection? = null,
@@ -146,7 +148,8 @@ class Parameters private constructor(
         var socket: String = "minicap",
         var quality: Int = 100,
         var displayInfo: Boolean = false,
-        var frameRate: Float = Float.MAX_VALUE
+        var frameRate: Float = Float.MAX_VALUE,
+        var debugMode: Boolean = false
     ) {
         //TODO make something more robust
         fun projection(p: String) = apply {
@@ -161,10 +164,11 @@ class Parameters private constructor(
         }
 
         fun screenshot(s: Boolean) = apply { this.screenshot = s }
+        fun debugMode(s: Boolean) = apply { this.debugMode = s }
         fun socket(name: String) = apply { this.socket = name }
         fun quality(value: Int) = apply { this.quality = value }
         fun displayInfo(enabled: Boolean) = apply { this.displayInfo = enabled }
         fun frameRate(value: Float) = apply { this.frameRate = value }
-        fun build() = Parameters(projection, screenshot, socket, quality, displayInfo, frameRate)
+        fun build() = Parameters(projection, screenshot, socket, quality, displayInfo, frameRate, debugMode)
     }
 }

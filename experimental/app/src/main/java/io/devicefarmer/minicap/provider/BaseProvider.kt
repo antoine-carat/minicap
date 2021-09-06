@@ -57,6 +57,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
     private var framePeriodMs: Long = 0
     private lateinit var lastImage: ByteArray
     private var senderStarted = false
+    private var debug = false
 
     private val lock = ReentrantLock()
 
@@ -84,11 +85,12 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         )
     }
 
-    override fun onConnection(socket: Socket, server: ServerSocket) {
+    override fun onConnection(socket: Socket, server: ServerSocket, debugMode: Boolean) {
         log.info("New connection")
         init()
         clientSocket = socket
         serverSocket = server
+        debug = debugMode
     }
 
     override fun onImageAvailable(reader: ImageReader) {
@@ -96,7 +98,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         if (image != null) {
             val encodedImage = encode(image, quality)
             synchronized(this) {
-                log.info("Saving new image")
+                // log.info("Saving new image")
                 lastImage = encodedImage
             }
             if (!senderStarted) {
@@ -105,7 +107,7 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
             }
             image.close()
         } else {
-            log.info("no image available")
+            // log.info("no image available")
         }
     }
 
@@ -113,12 +115,6 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
       thread {
           var input = DataInputStream(clientSocket.inputStream)
           while(true) {
-              if (clientSocket.isClosed()){ // To restart the sending thread in case of reconnect
-                log.warn("clientSocket got closed, waiting on new connection")
-                clientSocket = serverSocket.accept()
-                input = DataInputStream(clientSocket.inputStream)
-                log.info("Reconnected!")
-              }
               //log.info("waiting for client to send 1 byte")
               // Wait for client to send 1 byte char
               try {
@@ -133,13 +129,23 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
               }
               //log.info("currentImage size is ${currentImage.size}")
               try {
+                log.info("Sending image to client (${currentImage.size} bytes)")
                 with(clientSocket.outputStream) {
                   write(currentImage)
                   flush()
+                  if (debug){
+                    clientSocket.close()
+                  }
                 }
               }
               catch(e: Exception) {
                 clientSocket.close()
+              }
+              if (clientSocket.isClosed() || debug){ // To restart the sending thread in case of reconnect
+                log.warn("Waiting on new connection")
+                clientSocket = serverSocket.accept()
+                input = DataInputStream(clientSocket.inputStream)
+                log.info("Reconnected!")
               }
               //log.info("done")
           }

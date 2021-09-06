@@ -71,8 +71,8 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
     /**
      *
      */
-    override fun onConnection(socket: Socket, server: ServerSocket) {
-        super.onConnection(socket, server)
+    override fun onConnection(socket: Socket, server: ServerSocket, debugMode: Boolean) {
+        super.onConnection(socket, server, debugMode)
         initSurface()
     }
 

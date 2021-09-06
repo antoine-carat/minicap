@@ -30,14 +30,14 @@ class SimpleServer(private val socket: String, private val listener: Listener) {
     }
 
     interface Listener {
-        fun onConnection(socket: Socket, server: ServerSocket)
+        fun onConnection(socket: Socket, server: ServerSocket, debugMode: Boolean)
     }
 
-    fun start() = try {
+    fun start(debugMode: Boolean) = try {
         val serverSocket = ServerSocket(2020)
         log.info("Listening on socket : 2020, ${socket}")
         val clientSocket: Socket = serverSocket.accept()
-        listener.onConnection(clientSocket, serverSocket)
+        listener.onConnection(clientSocket, serverSocket, debugMode)
     } catch (e: IOException) {
         log.error("error waiting connection", e)
     }
