@@ -56,7 +56,7 @@ abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : S
     private lateinit var imageReader: ImageReader
     private var previousTimeStamp: Long = 0L
     private var framePeriodMs: Long = 0
-    private lateinit var lastImage: ByteArray
+    private lateinit var lastImage: Bitmap
     private var senderStarted = false
     private var debug = false
 
@@ -101,21 +101,21 @@ abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : S
     }
 
     override fun onImageAvailable(reader: ImageReader) {
-        val image = reader.acquireLatestImage()
-        if (image != null) {
-            val encodedImage = encode(image, quality)
-            synchronized(this) {
-                // log.info("Saving new image")
-                lastImage = encodedImage
-            }
-            if (!senderStarted) {
-                startSender()
-                senderStarted = true
-            }
-            image.close()
-        } else {
-            // log.info("no image available")
-        }
+      val image = reader.acquireLatestImage()
+      if (image != null) {
+          val encodedImage = encode(image, quality)
+          synchronized(this) {
+              // log.info("Saving new image")
+              lastImage = encodedImage
+          }
+          if (!senderStarted) {
+              startSender()
+              senderStarted = true
+          }
+          image.close()
+      } else {
+          // log.info("no image available")
+      }
     }
 
     private fun startSender() {
@@ -132,20 +132,25 @@ abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : S
               //log.info("after reading 1 byte")
               var currentImage: ByteArray
               synchronized(this) {
-                  currentImage = lastImage.copyOf()
+                  val finalSize = lastImage.rowBytes * lastImage.height
+                  val byteBuffer = ByteBuffer.allocate(finalSize)
+                  lastImage.copyPixelsToBuffer(byteBuffer)
+                  currentImage = byteBuffer.array()
               }
               //log.info("currentImage size is ${currentImage.size}")
               try {
                 log.info("Sending image to client (${currentImage.size} bytes)")
-                with(clientSocket.outputStream) {
-                  write(currentImage)
-                  flush()
-                  if (debug){
-                    clientSocket.close()
+                if (debug){
+                  // In debug mode we send a JPG image directly
+                  lastImage.compress(Bitmap.CompressFormat.JPEG, quality, clientSocket.outputStream)
+                  clientSocket.close()
+                } else {
+                  with(clientSocket.outputStream) {
+                    write(currentImage)
+                    flush()
                   }
                 }
-              }
-              catch(e: Exception) {
+              } catch(e: Exception) {
                 clientSocket.close()
               }
               if (clientSocket.isClosed() || debug){ // To restart the sending thread in case of reconnect
@@ -159,7 +164,7 @@ abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : S
       }
     }
 
-    private fun encode(image: Image, q:Int): ByteArray {
+    private fun encode(image: Image, q:Int): Bitmap {
         val planes: Array<Image.Plane> = image.planes
         val buffer: ByteBuffer = planes[0].buffer
         val pixelStride: Int = planes[0].pixelStride
@@ -175,15 +180,11 @@ abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : S
         bitmap.copyPixelsFromBuffer(buffer)
         bitmap = Bitmap.createBitmap(bitmap, 0, 0, getTargetSize().width, getTargetSize().height)
 
-        // If landscape mode, rotate image
+        // If landscape mode, rotate image because webRTC expects it
         if (image.width > image.height) {
             bitmap = bitmap.rotate(90f)
         }
 
-        val finalSize = bitmap.rowBytes * bitmap.height
-        val byteBuffer = ByteBuffer.allocate(finalSize)
-        bitmap.copyPixelsToBuffer(byteBuffer)
-
-        return byteBuffer.array()
+        return bitmap
     }
 }

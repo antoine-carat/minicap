@@ -58,8 +58,6 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
     val displayInfo: DisplayInfo = currentDisplayInfo()
 
     override fun getScreenSize(): Size = if(rotation % 2 != 0) Size(displayInfo.size.height, displayInfo.size.width) else displayInfo.size
-//    override fun getScreenSize(): Size = displayInfo.size
-
 
     override fun screenshot(printer: PrintStream) {
         init()
