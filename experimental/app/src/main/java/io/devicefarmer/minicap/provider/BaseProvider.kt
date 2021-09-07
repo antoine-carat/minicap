@@ -18,6 +18,7 @@ package io.devicefarmer.minicap.provider
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.PixelFormat
 import android.media.Image
 import android.media.ImageReader
@@ -43,7 +44,7 @@ import kotlin.concurrent.thread
  * and sends the results to an output (could be a file for screenshot, or a minicap client receiving the
  * jpeg stream)
  */
-abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : SimpleServer.Listener,
+abstract class BaseProvider(private val targetSize: Size, var rotation: Int) : SimpleServer.Listener,
     ImageReader.OnImageAvailableListener {
 
     companion object {
@@ -71,18 +72,24 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
 
     abstract fun screenshot(printer: PrintStream)
     abstract fun getScreenSize(): Size
-
     fun getTargetSize(): Size = if(rotation%2 != 0) Size(targetSize.height, targetSize.width) else targetSize
     fun getImageReader(): ImageReader = imageReader
 
     @SuppressLint("WrongConstant")
     fun init() {
+        log.info("Initialising image reader instance")
         imageReader = ImageReader.newInstance(
             getTargetSize().width,
             getTargetSize().height,
             PixelFormat.RGBA_8888,
             1
         )
+    }
+
+
+    fun Bitmap.rotate(degrees: Float): Bitmap {
+        val matrix = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
     }
 
     override fun onConnection(socket: Socket, server: ServerSocket, debugMode: Boolean) {
@@ -158,15 +165,25 @@ abstract class BaseProvider(private val targetSize: Size, val rotation: Int) : S
         val pixelStride: Int = planes[0].pixelStride
         val rowStride: Int = planes[0].rowStride
         val rowPadding: Int = rowStride - pixelStride * image.width
+
         // createBitmap can be resources consuming
         var bitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride,
             image.height,
             Bitmap.Config.ARGB_8888)
+
+
         bitmap.copyPixelsFromBuffer(buffer)
         bitmap = Bitmap.createBitmap(bitmap, 0, 0, getTargetSize().width, getTargetSize().height)
+
+        // If landscape mode, rotate image
+        if (image.width > image.height) {
+            bitmap = bitmap.rotate(90f)
+        }
+
         val finalSize = bitmap.rowBytes * bitmap.height
         val byteBuffer = ByteBuffer.allocate(finalSize)
         bitmap.copyPixelsToBuffer(byteBuffer)
+
         return byteBuffer.array()
     }
 }

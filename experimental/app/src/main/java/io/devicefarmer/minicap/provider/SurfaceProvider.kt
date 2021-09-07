@@ -57,7 +57,8 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
 
     val displayInfo: DisplayInfo = currentDisplayInfo()
 
-    override fun getScreenSize(): Size = displayInfo.size
+    override fun getScreenSize(): Size = if(rotation % 2 != 0) Size(displayInfo.size.height, displayInfo.size.width) else displayInfo.size
+//    override fun getScreenSize(): Size = displayInfo.size
 
 
     override fun screenshot(printer: PrintStream) {
@@ -76,16 +77,38 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
         initSurface()
     }
 
+    override fun onImageAvailable(reader: ImageReader){
+        if (rotation == currentDisplayInfo().rotation) {
+            super.onImageAvailable(reader)
+        } else {
+            log.info("Current rotation: ${rotation}")
+            log.info("Rotation change detected")
+            // It means we're skipping  frame to handle it. But that's fine
+            rotation = currentDisplayInfo().rotation
+            init()
+            initSurface()
+            log.info("Current rotation: ${rotation}")
+        }
+    }
+
     /**
      * Setup the Surface between the display and an ImageReader so that we can grab the
      * screen.
      */
     private fun initSurface(l: ImageReader.OnImageAvailableListener) {
+        log.info("Initialising surface provider")
         //must be done on the main thread
         display = SurfaceControl.createDisplay("minicap", false)
         //initialise the surface to get the display in the ImageReader
         SurfaceControl.openTransaction()
+
         try {
+            log.info("Target width: ${getTargetSize().width}")
+            log.info("Target height: ${getTargetSize().height}")
+
+            log.info("Screen width: ${getScreenSize().width}")
+            log.info("Screen height: ${getScreenSize().height}")
+
             SurfaceControl.setDisplaySurface(display, getImageReader().surface)
             SurfaceControl.setDisplayProjection(
                 display,
@@ -94,6 +117,7 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
                 Rect(0, 0, getTargetSize().width, getTargetSize().height)
             )
             SurfaceControl.setDisplayLayerStack(display, displayInfo.layerStack)
+            log.info("Initialised surface.")
         } finally {
             SurfaceControl.closeTransaction()
         }
