@@ -28,6 +28,8 @@ import io.devicefarmer.minicap.utils.DisplayInfo
 import io.devicefarmer.minicap.utils.DisplayManagerGlobal
 import io.devicefarmer.minicap.utils.SurfaceControl
 import java.io.PrintStream
+import java.net.Socket
+import java.net.ServerSocket
 import kotlin.system.exitProcess
 
 /**
@@ -56,11 +58,10 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
 
     val displayInfo: DisplayInfo = currentDisplayInfo()
 
-    override fun getScreenSize(): Size = displayInfo.size
-
+    override fun getScreenSize(): Size = if(rotation % 2 != 0) Size(displayInfo.size.height, displayInfo.size.width) else displayInfo.size
 
     override fun screenshot(printer: PrintStream) {
-        init(ScreenshotOutput(printer))
+        init()
         initSurface {
             super.onImageAvailable(it)
             exitProcess(0)
@@ -70,9 +71,23 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
     /**
      *
      */
-    override fun onConnection(socket: LocalSocket) {
-        super.onConnection(socket)
+    override fun onConnection(socket: Socket, server: ServerSocket, debugMode: Boolean) {
+        super.onConnection(socket, server, debugMode)
         initSurface()
+    }
+
+    override fun onImageAvailable(reader: ImageReader){
+        if (rotation == currentDisplayInfo().rotation) {
+            super.onImageAvailable(reader)
+        } else {
+            log.info("Current rotation: ${rotation}")
+            log.info("Rotation change detected")
+            // It means we're skipping  frame to handle it. But that's fine
+            rotation = currentDisplayInfo().rotation
+            init()
+            initSurface()
+            log.info("Current rotation: ${rotation}")
+        }
     }
 
     /**
@@ -80,6 +95,7 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
      * screen.
      */
     private fun initSurface(l: ImageReader.OnImageAvailableListener) {
+        log.info("Initialising surface provider")
         //must be done on the main thread
         // Support  Android 12 (preview),and resolve black screen problem
         val secure =
@@ -87,7 +103,14 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
         display = SurfaceControl.createDisplay("minicap", secure)
         //initialise the surface to get the display in the ImageReader
         SurfaceControl.openTransaction()
+
         try {
+            log.info("Target width: ${getTargetSize().width}")
+            log.info("Target height: ${getTargetSize().height}")
+
+            log.info("Screen width: ${getScreenSize().width}")
+            log.info("Screen height: ${getScreenSize().height}")
+
             SurfaceControl.setDisplaySurface(display, getImageReader().surface)
             SurfaceControl.setDisplayProjection(
                 display,
@@ -96,6 +119,7 @@ class SurfaceProvider(targetSize: Size, orientation: Int) : BaseProvider(targetS
                 Rect(0, 0, getTargetSize().width, getTargetSize().height)
             )
             SurfaceControl.setDisplayLayerStack(display, displayInfo.layerStack)
+            log.info("Initialised surface.")
         } finally {
             SurfaceControl.closeTransaction()
         }
